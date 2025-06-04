@@ -41,6 +41,12 @@ export interface Tracker {
    *  will be deleted on the next page view. Cookies will be even disabled if the
    *  user has given cookie consent using the method */
   disableCookies: () => void
+
+  /** Enable cross domain linking. */
+  enableCrossDomainLinking: () => void
+  
+  /** Set array of hostnames or domains to be treated as local. */
+  setDomains: (domains: string[]) => void
 }
 
 export const tracker = writable<Tracker>()
