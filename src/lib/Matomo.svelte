@@ -3,7 +3,8 @@
   import { env } from "$env/dynamic/public"
   import { afterNavigate } from "$app/navigation"
   import { page } from "$app/stores"
-  import { tracker } from "$lib/tracker.js"
+  import { tracker } from "$lib/tracker"
+  import type { Tracker } from "$lib/tracker"
 
   export let url: string = env.PUBLIC_MATOMO_URL
   export let siteId: number = +env.PUBLIC_MATOMO_SITE_ID
@@ -16,8 +17,18 @@
 
   export let linkTracking: boolean | null = null
 
+  interface TMatomo {
+    getTracker: (url: string, siteId: number) => Tracker
+    set: (tracker: Tracker) => void
+  }
+
+  interface TWindow {
+    Matomo: TMatomo;
+  }
+
   async function initializeMatomo() {
-    const matomo = window.Matomo
+    // gymnastics to silence svelte-check
+    const matomo = ((window as unknown) as TWindow).Matomo
     if (!matomo) return
 
     const track = matomo.getTracker(`${url}/matomo.php`, siteId)
