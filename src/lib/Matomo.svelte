@@ -3,19 +3,32 @@
   import { env } from "$env/dynamic/public"
   import { afterNavigate } from "$app/navigation"
   import { page } from "$app/stores"
-  import { tracker } from "$lib/tracker.js"
+  import { tracker } from "$lib/tracker"
+  import type { Tracker } from "$lib/tracker"
 
   export let url: string = env.PUBLIC_MATOMO_URL
   export let siteId: number = +env.PUBLIC_MATOMO_SITE_ID
   export let disableCookies = false
   export let requireConsent = false
   export let doNotTrack = false
+  export let enableCrossDomainLinking = false
+  export let domains: string[] = []
   export let heartBeat: number | null = 15
 
   export let linkTracking: boolean | null = null
 
+  interface TMatomo {
+    getTracker: (url: string, siteId: number) => Tracker
+    set: (tracker: Tracker) => void
+  }
+
+  interface TWindow {
+    Matomo: TMatomo;
+  }
+
   async function initializeMatomo() {
-    const matomo = window.Matomo
+    // gymnastics to silence svelte-check
+    const matomo = ((window as unknown) as TWindow).Matomo
     if (!matomo) return
 
     const track = matomo.getTracker(`${url}/matomo.php`, siteId)
@@ -25,6 +38,8 @@
     if (requireConsent) track.requireConsent()
     if (doNotTrack) track.setDoNotTrack(true)
     if (heartBeat) track.enableHeartBeatTimer(heartBeat)
+    if (enableCrossDomainLinking) track.enableCrossDomainLinking()
+    if (domains.length) track.setDomains(domains)
     if (linkTracking !== null) track.enableLinkTracking(linkTracking)
 
     tracker.set(track)
