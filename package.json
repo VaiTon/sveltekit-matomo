@@ -6,6 +6,7 @@
   "homepage": "https://github.com/sinnwerkstatt/sveltekit-matomo",
   "bugs": "https://github.com/sinnwerkstatt/sveltekit-matomo/issues",
   "scripts": {
+    "prepare": "npm run build",
     "dev": "vite dev",
     "build": "vite build && npm run package",
     "preview": "vite preview",
