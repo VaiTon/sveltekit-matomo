@@ -3,10 +3,14 @@
 	import { tracker } from '$lib/tracker';
 </script>
 
-Matomo test
+<h1>Matomo Test Page</h1>
 
-<Matomo />
+<p>This is a test page for the Matomo component.</p>
+
+<Matomo url="https://example.matomo.cloud" siteId={1} />
 
 {#if $tracker}
 	<button onclick={() => $tracker.trackEvent('test', 'track me')}>track me</button>
+{:else}
+	<p>Tracker not initialized yet...</p>
 {/if}

@@ -1,13 +1,14 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { env } from '$env/dynamic/public';
+	import { onMount, onDestroy } from 'svelte';
+
 	import { afterNavigate } from '$app/navigation';
-	import { tracker, type Tracker } from '$lib/tracker';
 	import { page } from '$app/state';
 
+	import { tracker, type Tracker } from '$lib/tracker';
+
 	interface Props {
-		url?: string;
-		siteId?: number;
+		url: string;
+		siteId: number;
 		disableCookies?: boolean;
 		requireConsent?: boolean;
 		doNotTrack?: boolean;
@@ -15,59 +16,125 @@
 		domains?: string[];
 		heartBeat?: number | null;
 		linkTracking?: boolean | null;
+		onTrackerReady?: (tracker: Tracker) => void;
+		onError?: (error: Error) => void;
 	}
 
 	let {
-		url = env.PUBLIC_MATOMO_URL,
-		siteId = env.PUBLIC_MATOMO_SITE_ID == null ? undefined : parseInt(env.PUBLIC_MATOMO_SITE_ID),
+		url,
+		siteId,
 		disableCookies = false,
 		requireConsent = false,
 		doNotTrack = false,
 		enableCrossDomainLinking = false,
 		domains = [],
 		heartBeat = 15,
-		linkTracking = null
+		linkTracking = null,
+		onTrackerReady,
+		onError
 	}: Props = $props();
 
-	interface TMatomo {
-		getTracker: (url: string, siteId: number) => Tracker;
-		set: (tracker: Tracker) => void;
-	}
+	let checkInterval: ReturnType<typeof setInterval> | null = null;
+	let scriptLoadError = $state(false);
 
-	interface TWindow {
-		Matomo: TMatomo;
+	function isMatomoLoaded(): boolean {
+		return typeof window !== 'undefined' && 'Matomo' in window && window.Matomo !== undefined;
 	}
 
 	async function initializeMatomo() {
-		// gymnastics to silence svelte-check
-		const matomo = (window as unknown as TWindow).Matomo;
-		if (!matomo) return;
-
-		if (!url || !siteId) {
-			console.warn('Matomo URL or Site ID is not set. Skipping Matomo initialization.');
+		if (!isMatomoLoaded()) {
 			return;
 		}
 
-		const track = matomo.getTracker(`${url}/matomo.php`, siteId);
-		if (!track) return;
+		try {
+			const matomo = window.Matomo;
+			if (!matomo) return;
 
-		if (disableCookies) track.disableCookies();
-		if (requireConsent) track.requireConsent();
-		if (doNotTrack) track.setDoNotTrack(true);
-		if (heartBeat) track.enableHeartBeatTimer(heartBeat);
-		if (enableCrossDomainLinking) track.enableCrossDomainLinking();
-		if (domains.length) track.setDomains(domains);
-		if (linkTracking !== null) track.enableLinkTracking(linkTracking);
+			const track = matomo.getTracker(`${url}/matomo.php`, siteId);
+			if (!track) return;
 
-		tracker.set(track);
+			if (disableCookies) track.disableCookies();
+			if (requireConsent) track.requireConsent();
+			if (doNotTrack) track.setDoNotTrack(true);
+			if (heartBeat) track.enableHeartBeatTimer(heartBeat);
+			if (enableCrossDomainLinking) track.enableCrossDomainLinking();
+			if (domains.length) track.setDomains(domains);
+			if (linkTracking !== null) track.enableLinkTracking(linkTracking);
 
-		track.setCustomDimension(1, page.data.user ? 'true' : 'false');
-		track.setCustomUrl(page.url.href);
-		track.trackPageView();
+			tracker.set(track);
+
+			// Allow custom initialization before first page view
+			if (onTrackerReady) {
+				onTrackerReady(track);
+			}
+
+			track.setCustomUrl(page.url.href);
+			track.trackPageView();
+		} catch (error) {
+			const err = error instanceof Error ? error : new Error(String(error));
+			if (onError) {
+				onError(err);
+			} else {
+				console.error('Matomo initialization error:', err);
+			}
+		}
 	}
 
-	onMount(async () => {
-		setTimeout(initializeMatomo, 100);
+	function handleScriptError() {
+		scriptLoadError = true;
+		const error = new Error('Failed to load Matomo script');
+		if (onError) {
+			onError(error);
+		} else {
+			console.error(error);
+		}
+		if (checkInterval) {
+			clearInterval(checkInterval);
+			checkInterval = null;
+		}
+	}
+
+	onMount(() => {
+		if (scriptLoadError) return;
+
+		// Check if Matomo is already loaded (e.g., from cache)
+		if (isMatomoLoaded()) {
+			initializeMatomo();
+			return;
+		}
+
+		// Poll for Matomo to be loaded
+		let attempts = 0;
+		const maxAttempts = 100; // 5 seconds with 50ms intervals
+
+		checkInterval = setInterval(() => {
+			attempts++;
+
+			if (isMatomoLoaded()) {
+				if (checkInterval) {
+					clearInterval(checkInterval);
+					checkInterval = null;
+				}
+				initializeMatomo();
+			} else if (attempts >= maxAttempts) {
+				if (checkInterval) {
+					clearInterval(checkInterval);
+					checkInterval = null;
+				}
+				handleScriptError();
+			}
+		}, 50);
+	});
+
+	onDestroy(() => {
+		if (checkInterval) {
+			clearInterval(checkInterval);
+			checkInterval = null;
+		}
+		if (scriptElement) {
+			scriptElement.removeEventListener('error', handleScriptError);
+			scriptElement = null;
+		}
 	});
 
 	afterNavigate(async ({ to }) => {
@@ -77,15 +144,21 @@
 		}
 
 		if (to?.url.href && $tracker) {
-			$tracker.setCustomDimension(1, page.data.user ? 'true' : 'false');
-			$tracker.setCustomUrl(to.url.href);
-			$tracker.trackPageView();
+			try {
+				$tracker.setCustomUrl(to.url.href);
+				$tracker.trackPageView();
+			} catch (error) {
+				const err = error instanceof Error ? error : new Error(String(error));
+				if (onError) {
+					onError(err);
+				} else {
+					console.error('Matomo navigation tracking error:', err);
+				}
+			}
 		}
 	});
 </script>
 
 <svelte:head>
-	{#if url && siteId}
-		<script async defer src={`${url}/matomo.js`}></script>
-	{/if}
+	<script async defer src={`${url}/matomo.js`} onerror={handleScriptError}></script>
 </svelte:head>
