@@ -35,6 +35,7 @@
 	}: Props = $props();
 
 	let checkInterval: ReturnType<typeof setInterval> | null = null;
+	let scriptElement: HTMLScriptElement | null = null;
 	let scriptLoadError = $state(false);
 
 	function isMatomoLoaded(): boolean {
@@ -160,5 +161,11 @@
 </script>
 
 <svelte:head>
-	<script async defer src={`${url}/matomo.js`} onerror={handleScriptError}></script>
+	<script
+		async
+		defer
+		src={`${url}/matomo.js`}
+		onerror={handleScriptError}
+		bind:this={scriptElement}
+	></script>
 </svelte:head>
